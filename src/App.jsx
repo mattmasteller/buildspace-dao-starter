@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useWeb3 } from '@3rdweb/hooks'
 import { ThirdwebSDK } from '@3rdweb/sdk'
 
+import { UnsupportedChainIdError } from '@web3-react/core'
+
 import { ethers } from 'ethers'
 
 // Instantiate the sdk on Rinkeby.
@@ -36,13 +38,51 @@ const App = () => {
   const [isVoting, setIsVoting] = useState(false)
   const [hasVoted, setHasVoted] = useState(false)
 
-  // Function to shorten a wallet address
-  const shortenAddress = (str) =>
-    `${str.substring(0, 6)}...${str.substring(str.length - 4)}`
-
   // The signer is required to sign txns on the blockchain.
   // Without it, we can only read data, not write.
   const signer = provider ? provider.getSigner() : undefined
+
+  // Combine memberAddresses and memberTokenAmounts into a single array
+  const memberList = useMemo(() => {
+    return memberAddresses.map((address) => {
+      return {
+        address,
+        tokenAmount: ethers.utils.formatUnits(
+          // If the address isn't in memberTokenAmounts, it means they don't
+          // hold any of our token.
+          memberTokenAmounts[address] || 0,
+          18
+        ),
+      }
+    })
+  }, [memberAddresses, memberTokenAmounts])
+
+  // Function to shorten a wallet address.
+  const shortenAddress = (str) =>
+    `${str.substring(0, 6)}...${str.substring(str.length - 4)}`
+
+  // Function to mint NFT.
+  const mintNft = () => {
+    setIsClaiming(true)
+    // Call bundleDropModule.claim("0", 1) to mint nft to user's wallet.
+    bundleDropModule
+      .claim('0', 1)
+      .then(() => {
+        // Set claim state.
+        setHasClaimedNFT(true)
+        // Show user their fancy new NFT!
+        console.log(
+          `🌊 Successfully Minted! Check it our on OpenSea: https://testnets.opensea.io/assets/${bundleDropModule.address.toLowerCase()}/0`
+        )
+      })
+      .catch((err) => {
+        console.error('failed to claim', err)
+      })
+      .finally(() => {
+        // Stop loading state.
+        setIsClaiming(false)
+      })
+  }
 
   // Grab all addresses of members holding NFT.
   useEffect(() => {
@@ -118,21 +158,6 @@ const App = () => {
       })
   }, [hasClaimedNFT, proposals, address])
 
-  // Combine memberAddresses and memberTokenAmounts into a single array
-  const memberList = useMemo(() => {
-    return memberAddresses.map((address) => {
-      return {
-        address,
-        tokenAmount: ethers.utils.formatUnits(
-          // If the address isn't in memberTokenAmounts, it means they don't
-          // hold any of our token.
-          memberTokenAmounts[address] || 0,
-          18
-        ),
-      }
-    })
-  }, [memberAddresses, memberTokenAmounts])
-
   useEffect(() => {
     // If user doesn't have a connected wallet, exit.
     if (!address) return
@@ -156,26 +181,17 @@ const App = () => {
       })
   }, [address])
 
-  const mintNft = () => {
-    setIsClaiming(true)
-    // Call bundleDropModule.claim("0", 1) to mint nft to user's wallet.
-    bundleDropModule
-      .claim('0', 1)
-      .then(() => {
-        // Set claim state.
-        setHasClaimedNFT(true)
-        // Show user their fancy new NFT!
-        console.log(
-          `🌊 Successfully Minted! Check it our on OpenSea: https://testnets.opensea.io/assets/${bundleDropModule.address.toLowerCase()}/0`
-        )
-      })
-      .catch((err) => {
-        console.error('failed to claim', err)
-      })
-      .finally(() => {
-        // Stop loading state.
-        setIsClaiming(false)
-      })
+  // Case where user is connected to the wrong network.
+  if (error instanceof UnsupportedChainIdError) {
+    return (
+      <div className="unsupported-network">
+        <h2>Please connect to Rinkeby</h2>
+        <p>
+          This dapp only works on the Rinkeby network, please switch networks in
+          your connected wallet.
+        </p>
+      </div>
+    )
   }
 
   // Case where user hasn't connected wallet.
